@@ -1,12 +1,6 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "xlsxdocument.h"
-#include <dialog_timein.h>
-#include <math.h>
-#include "tandrh.h"
-#include "ui_tandrh.h"
-#include "humidity.h"
-#include "ui_humidity.h"
+
 using namespace std;
 
 QByteArray buffer;
@@ -275,7 +269,7 @@ void MainWindow::ViewT()
     if(Started)
     {
          // bMutex.unlock();
-          TRH->draw_begin();
+          TRH->drawBegin();
     }
 
     TRH->show();
@@ -287,7 +281,7 @@ void MainWindow::ViewRH()
    // qDebug() << "showRH";
     if(Started)
     {
-          RH->drawRH_begin();
+          RH->drawRHBegin();
         //  bMutex.unlock();
     }
 

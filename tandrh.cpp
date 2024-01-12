@@ -1,16 +1,10 @@
 ﻿#include "tandrh.h"
 #include "ui_tandrh.h"
-#include "mainwindow.h"
-using namespace std;
 
 
+using std::vector;
+using std::thread;
 extern vector<float> Temperature_signal;    //时间数组
-extern std::mutex bMutex;//
-extern int reading;
-static int openflag = 0;
-static int axisY_max = 30,axisY_min = 10;
-static int axisX_max = 500,axisX_min = 0;
-static thread* array_graph1;
 static QColor Graph_color[2] = {
                          QColor(255, 0, 0),//大红
                          QColor(0, 255, 0)
@@ -20,158 +14,146 @@ void idle_thread1() {
 }
 
 
-void TandRH::draw_thread1() {
-    qDebug() <<"start:drawT";
-    while(reading);//等待读结束
-  //  bMutex.lock();
-        series1[0]->setPen(QPen(Graph_color[0], 3, Qt::SolidLine));// 设置折线显示效果
-        for (int i = 0; i <= axisX_max; i++)
-           series1[0]->append(-i, Temperature_signal[i]);
-
+void TandRH::drawThread() {
+    // 设置曲线显示
+    series_[0]->setPen(QPen(Graph_color[0], 3, Qt::SolidLine));
+    for (int i = 0; i <= TandRH::axisX_max_; i++) {
+        series_[0]->append(-i, Temperature_signal[i]);
+    }
     return;
-   // bMutex.unlock();
 }
 // 重写closeEvent: 确认退出对话框
-void TandRH::closeEvent(QCloseEvent *event)
-{
-if(openflag)
-{
-        // bMutex.unlock();
-      delete series1[0];
-    delete array_graph1;//删除线程
-    timer2->stop();
-    delete timer2;//删除采集线程
-
+void TandRH::closeEvent(QCloseEvent *event) {
+    if (openflag_) {
+        delete series_[0];
+        delete array_graph_; // 删除线程
+        draw_timer_->stop();
+        openflag_ = 0;
+        delete draw_timer_; // 删除采集线程
+    }
+     event->accept(); // 接受退出信号，程序退出
 }
 
- event->accept(); // 接受退出信号，程序退出
-}
 TandRH::TandRH(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::TandRH)
+    ui_(new Ui::TandRH)
 {
-    ui->setupUi(this);
-    temperature_init();
+    openflag_ = 0;
+    axisX_max_ = 50;
+    axisX_min_ = 0;
+    axisY_max_ = 50;
+    axisY_min_ = 10;
+    ui_->setupUi(this);
+    temperatureInit();
 
+}
+
+TandRH::~TandRH()
+{
+    delete ui_;
+}
+void TandRH::temperatureInit()
+{
     /*****************设置标题和图标***********************/
-    setWindowTitle(u8"Temperature");
-
-    drawing1 = new QChart;
-    drawing1->setTitle(u8"Temperature");
-    drawview1 = new QChartView(drawing1);
-    axisX1 = new QValueAxis;
-    axisY1 = new QValueAxis;
+    setWindowTitle(u8"温度显示");
+    drawing_ = new QChart;
+    drawing_->setTitle(u8"温度");
+    drawview_ = new QChartView(drawing_);
+    axisX_ = new QValueAxis;
+    axisY_ = new QValueAxis;
     //建立数据源队列
 
     //建立坐标轴
     QBrush AxisColor1;
     AxisColor1.setColor(Qt::black);
-    axisX1->setRange(-500, 0);                // 设置范围
-    axisX1->setLabelFormat("%d");                            // 设置刻度的格式
-    axisX1->setGridLineVisible(true);                        // 网格线可见
-    axisX1->setTickCount(6);                                 // 设置多少个大格
-    axisX1->setMinorTickCount(1);                            // 设置每个大格里面小刻度线的数目
-    axisX1->setTitleText(u8"time");                             // 设置描述
+    axisX_->setRange(-axisX_max_, axisX_min_);                // 设置范围
+    axisX_->setLabelFormat("%d");             // 设置刻度的格式
+    axisX_->setGridLineVisible(true);         // 网格线可见
+    axisX_->setTickCount(6);                  // 设置多少个大格
+    axisX_->setMinorTickCount(1);             // 设置每个大格里面小刻度线的数目
+    axisX_->setTitleText(u8"time");           // 设置描述
 
-    axisY1->setRange(10, 30);
-    axisY1->setLabelFormat("%.1f");
-    axisY1->setGridLineVisible(true);
-    axisY1->setTickCount(8);
-    axisY1->setMinorTickCount(1);
-    axisY1->setTitleText(u8"T/℃");
+    axisY_->setRange(axisY_min_, axisY_max_);
+    axisY_->setLabelFormat("%.1f");
+    axisY_->setGridLineVisible(true);
+    axisY_->setTickCount(8);
+    axisY_->setMinorTickCount(1);
+    axisY_->setTitleText(u8"T/℃");
 
     //为曲线添加坐标轴
-    drawing1->addAxis(axisX1, Qt::AlignBottom);               // 下：Qt::AlignBottom  上：Qt::AlignTop
-    drawing1->addAxis(axisY1, Qt::AlignLeft);                 // 左：Qt::AlignLeft    右：Qt::AlignRight
-    drawing1->legend()->setAlignment(Qt::AlignTop);
-    drawing1->legend()->setVisible(false);
-    drawview1->setRenderHint(QPainter::Antialiasing);        //防止图形走样
-    ui->verticalLayout->addWidget(drawview1);//将图像放入布局中
+    drawing_->addAxis(axisX_, Qt::AlignBottom);               // 下：Qt::AlignBottom  上：Qt::AlignTop
+    drawing_->addAxis(axisY_, Qt::AlignLeft);                 // 左：Qt::AlignLeft    右：Qt::AlignRight
+    drawing_->legend()->setAlignment(Qt::AlignTop);
+    drawing_->legend()->setVisible(false);
+    drawview_->setRenderHint(QPainter::Antialiasing);        //防止图形走样
+    ui_->verticalLayout->addWidget(drawview_);                //将图像放入布局中
+    connect(ui_->pushSendMaxY,&QPushButton::clicked,this,&TandRH::setMaxYRange);
+    connect(ui_->pushSendMinY,&QPushButton::clicked,this,&TandRH::setMinYRange);
+    connect(ui_->pushSendMaxX,&QPushButton::clicked,this,&TandRH::setMaxXRange);
+    connect(ui_->pushSendMinX,&QPushButton::clicked,this,&TandRH::setMinXRange);
 }
 
-TandRH::~TandRH()
-{
-    delete ui;
-}
-void TandRH::temperature_init()
-{
-    connect(ui->pushSendMaxY,&QPushButton::clicked,this,&TandRH::Set_MaxY_Range);
-    connect(ui->pushSendMinY,&QPushButton::clicked,this,&TandRH::Set_MinY_Range);
-    connect(ui->pushSendMaxX,&QPushButton::clicked,this,&TandRH::Set_MaxX_Range);
-    connect(ui->pushSendMinX,&QPushButton::clicked,this,&TandRH::Set_MinX_Range);
+void TandRH::drawBegin() {
+    draw_timer_ = new QTimer;
+    draw_timer_->start(TIME_SEND);
+    openflag_ = 1;
+    series_[0] = new QLineSeries;
+    // 创建空闲线程
+    array_graph_ = new std::thread(idle_thread1);
+    array_graph_->join();
+    // 连接定时器
+    connect(draw_timer_, &QTimer::timeout, this, &TandRH::drawGraph);
 }
 
-void TandRH::draw_begin(){
-
-timer2 = new QTimer;
-timer2->start(1000);//TIME_CYCms采集一次
-openflag = 1;
-    qDebug() <<"start:time1";
-    series1[0] = new QLineSeries;
-     array_graph1 = new std::thread(idle_thread1);//创建空闲线程
-
-     array_graph1->join();
- connect(timer2, SIGNAL(timeout()), this, SLOT(Draw_Graph1()));//连接定时器
-    qDebug() <<"start:time2";
-}
-void TandRH::Draw_Graph1()
-{
-    qDebug() <<"start:time3";
-    delete array_graph1;
- //   series2[1] = new QLineSeries;
-  qDebug() <<"start:time7";
-    delete series1[0];
-        qDebug() <<"start:time8";
-    series1[0] = new QLineSeries;
-         qDebug() <<"start:time6";
-    array_graph1 = new std::thread(&TandRH::draw_thread1, this);//创建画图线程
-         qDebug() <<"start:time5";
-    array_graph1->join();
- qDebug() <<"start:time4";
-    drawing1->addSeries(series1[0]);
-    drawing1->setAxisX(axisX1, series1[0]);
-    drawing1->setAxisY(axisY1, series1[0]);
-
-}
-/*************功能：坐标轴手动设置**********************/
-void TandRH::Set_MaxY_Range()
+void TandRH::drawGraph()
 {
 
-        if(!ui->linemaxY->text().isEmpty())//设置内容不能为空
-        {
-            axisY_max = ui->linemaxY->text().toInt();//将文本框中内容转换为int数据
-            axisY1->setRange(axisY_min, axisY_max);//设置范围
-        }
+    delete array_graph_;
+    delete series_[0];
 
+    //创建画图线程
+    array_graph_ = new std::thread(&TandRH::drawThread, this);
+    array_graph_->join();
+
+    series_[0] = new QLineSeries;
+    drawing_->addSeries(series_[0]);
+    drawing_->setAxisX(axisX_, series_[0]);
+    drawing_->setAxisY(axisY_, series_[0]);
 }
-/*************功能：坐标轴手动设置**********************/
-void TandRH::Set_MinY_Range()
+/*************功能：Y坐标轴手动设置**********************/
+void TandRH::setMaxYRange()
 {
+     //设置内容不能为空
+     if(!ui_->linemaxY->text().isEmpty()){
+        //将文本框中内容转换为int数据
+         axisY_max_ = ui_->linemaxY->text().toInt();
+         axisY_->setRange(axisY_min_, axisY_max_);
+      }
 
-        if(!ui->lineminY->text().isEmpty())
-        {
-            axisY_min = ui->lineminY->text().toInt();
-            axisY1->setRange(axisY_min, axisY_max);
-        }
 }
-/*************功能：坐标轴手动设置**********************/
-void TandRH::Set_MaxX_Range()
+/*************功能：Y坐标轴手动设置**********************/
+void TandRH::setMinYRange()
 {
-
-        if(!ui->linemaxX->text().isEmpty())//设置内容不能为空
-        {
-            axisX_max = ui->linemaxX->text().toInt();//将文本框中内容转换为int数据
-            axisX1->setRange(-axisX_max, -axisX_min);//设置范围
-        }
-
+     if(!ui_->lineminY->text().isEmpty()){
+        axisY_min_ = ui_->lineminY->text().toInt();
+        axisY_->setRange(axisY_min_, axisY_max_);
+     }
 }
-/*************功能：坐标轴手动设置**********************/
-void TandRH::Set_MinX_Range()
+/*************功能：X坐标轴手动设置**********************/
+void TandRH::setMaxXRange()
 {
-
-        if(!ui->lineminX->text().isEmpty())
-        {
-            axisX_min = ui->lineminX->text().toInt();
-            axisX1->setRange(-axisX_max, -axisX_min);//设置范围
-        }
+    if (!ui_->linemaxX->text().isEmpty()) {
+        axisX_max_ = ui_->linemaxX->text().toInt(); // 将文本框中内容转换为int数据
+        axisX_->setRange(-axisX_max_, -axisX_min_); // 设置范围
+    }
 }
+
+/*************功能：X坐标轴手动设置**********************/
+void TandRH::setMinXRange()
+{
+    if (!ui_->lineminX->text().isEmpty()) {
+        axisX_min_ = ui_->lineminX->text().toInt();
+        axisX_->setRange(-axisX_max_, -axisX_min_); // 设置范围
+    }
+}
+
